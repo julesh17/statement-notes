@@ -27,11 +27,10 @@ GPA_MAPPING = {
 }
 
 # Base de données des cours (Traduction + Crédits FIXES)
-# CORRECTION DÉFINITIVE DES CLÉS pour match avec l'extraction du PDF (UE 5.1 et UE 6.1 sans tiret)
 COURSE_INFO_DB = {
-    # COURSES (avec crédits pour le calcul GPA)
+    # COURSES
     "UE 5.1 Mathématiques pour l'ingénieur": {"en": "[S5] Mathematics for Engineers", "credits": 5, "type": "COURSE"}, 
-    "UE 5.2 - Sciences pour l'ingénieur 1": {"en": "[S5] Science fundamentals 1", "credits": 7, "type": "COURSE"}, # Crédits fixes à 7 pour ce module
+    "UE 5.2 - Sciences pour l'ingénieur 1": {"en": "[S5] Science fundamentals 1", "credits": 7, "type": "COURSE"},
     "UE 6.1 Mathématiques pour l'ingénieur S6": {"en": "[S6] Mathematics for Engineers S6", "credits": 2, "type": "COURSE"}, 
     "UE 6.4 - Méthodes d'analyse et qualité": {"en": "[[S6] Analysis methods and quality", "credits": 2, "type": "COURSE"},
     "UE 5.3 - Electronique appliquée": {"en": "[S5] Applied electronics", "credits": 5, "type": "COURSE"},
@@ -43,7 +42,7 @@ COURSE_INFO_DB = {
     "UE 5.4 - Anglais S5": {"en": "[S5] English", "credits": 2, "type": "COURSE"},
     "UE 6.5 - Anglais S6": {"en": "[S6] English", "credits": 2, "type": "COURSE"},
 
-    # CATEGORIES (avec crédits à 0, pour la mise en forme du tableau)
+    # CATEGORIES
     "Sciences de base": {"en": "Science Fundamentals", "credits": 0, "type": "CATEGORY"},
     "Sciences et méthodes de l'ingénieur": {"en": "Engineering methodology", "credits": 0, "type": "CATEGORY"},
     "Sciences et techniques de spécialité": {"en": "Industrial engineering techniques and systems", "credits": 0, "type": "CATEGORY"},
@@ -52,7 +51,16 @@ COURSE_INFO_DB = {
     "Langues": {"en": "Languages", "credits": 0, "type": "CATEGORY"}
 }
 
-# --- FONCTIONS UTILITAIRES ---
+# --- FONCTIONS UTILITAIRES DE NORMALISATION ET MAPPING ---
+
+def normalize_name(name):
+    """Normalise une chaîne de nom de cours en retirant les espaces, tirets, points et en passant en minuscule."""
+    return "".join(name.lower().split()).replace('-', '').replace('.', '')
+
+# Création d'une map normalisée pour une recherche robuste et rapide
+NORMALIZED_COURSE_MAP = {
+    normalize_name(k): v for k, v in COURSE_INFO_DB.items()
+}
 
 def extract_data_from_pdf(uploaded_file):
     """Extrait le texte et le tableau brut du PDF."""
@@ -100,7 +108,9 @@ def prepare_df_for_edit(raw_table):
             french_name = clean_row[0].strip()
             grade_pdf = clean_row[2].strip() 
             
-            info = COURSE_INFO_DB.get(french_name)
+            # RECHERCHE ROBUSTE
+            normalized_input = normalize_name(french_name)
+            info = NORMALIZED_COURSE_MAP.get(normalized_input)
             
             if info:
                 english_name = info['en']
@@ -136,7 +146,7 @@ def calculate_gpa_from_edited_df(df):
             points = get_gpa_points(row['ECTS_Grade'])
             
             if points is not None:
-                # Calcul GPA corrigé et VÉRIFIÉ : (Note GPA * Crédits FIXES)
+                # Calcul GPA VÉRIFIÉ : (Note GPA * Crédits FIXES)
                 weight = float(row['Credits']) 
                 total_points += (points * weight)
                 total_credits += weight
@@ -304,12 +314,12 @@ if uploaded_file:
     meta = parse_metadata(text)
     meta['program'] = program
 
-    # 2. Préparation pour l'édition (avec traduction et crédits fixes rétablis)
+    # 2. Préparation pour l'édition 
     df_initial_for_edit = prepare_df_for_edit(raw_table)
 
     with col_preview:
         st.subheader("4. Vérification, Traduction et Calcul")
-        st.info("✅ **Calcul GPA et traduction sont rétablis.** Vérifiez et ajustez si nécessaire la colonne **'Nom Anglais (Éditable)'**.")
+        st.info("Les données du PDF sont chargées. Les traductions et le calcul du GPA basé sur les crédits fixes sont appliqués.")
 
         # Éditeur de données interactif
         edited_df = st.data_editor(
@@ -330,9 +340,8 @@ if uploaded_file:
         df_final_for_pdf, gpa_val, total_creds = calculate_gpa_from_edited_df(edited_df)
 
         st.metric(label="Moyenne GPA Calculée", value=f"{gpa_val:.2f}")
-
-        st.write("Générer le PDF ci-dessous pour un document conforme.")
         
+        # 4. Génération PDF
         if st.button("📄 Générer et Télécharger le PDF", type="primary"):
             sig_img = None
             if canvas_result.image_data is not None and canvas_result.image_data.any():
@@ -340,7 +349,6 @@ if uploaded_file:
             
             pdf_bytes = generate_pdf(meta, df_final_for_pdf, gpa_val, total_creds, sig_img, supervisor)
             
-            st.success("Document généré !")
             st.download_button(
                 label="⬇️ Télécharger le fichier PDF",
                 data=pdf_bytes,
@@ -349,4 +357,4 @@ if uploaded_file:
             )
 else:
     with col_preview:
-        st.info("Attente du fichier source...")
+        st.info("Veuillez charger votre relevé de notes PDF.")
