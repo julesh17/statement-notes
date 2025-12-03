@@ -22,17 +22,17 @@ GPA_MAPPING = {
     "D": 1.7,
     "E": 1.0,
     "FX": 0.0,
-    "Fx": 0.0, # Fx = 0.0 (régression GPA corrigée ici si jamais Fx n'était pas traité)
+    "Fx": 0.0, 
     "F": 0.0
 }
 
 # Base de données des cours (Traduction + Crédits FIXES)
-# CORRECTION : Ajout du tiret "-" pour UE 5.1 et UE 6.1 pour assurer le match des clés.
+# CLÉS CORRIGÉES pour correspondre aux noms extraits du PDF (avec/sans tiret)
 COURSE_INFO_DB = {
-    # COURSES (avec crédits pour le calcul GPA)
-    "UE 5.1 - Mathématiques pour l'ingénieur": {"en": "[S5] Mathematics for Engineers", "credits": 5, "type": "COURSE"}, 
-    "UE 5.2 - Sciences pour l'ingénieur 1": {"en": "[S5] Science fundamentals 1", "credits": 7, "type": "COURSE"}, # Crédits fixes à 7
-    "UE 6.1 - Mathématiques pour l'ingénieur S6": {"en": "[S6] Mathematics for Engineers S6", "credits": 2, "type": "COURSE"}, 
+    # COURSES
+    "UE 5.1 Mathématiques pour l'ingénieur": {"en": "[S5] Mathematics for Engineers", "credits": 5, "type": "COURSE"}, 
+    "UE 5.2 - Sciences pour l'ingénieur 1": {"en": "[S5] Science fundamentals 1", "credits": 7, "type": "COURSE"}, # Crédits fixes à 7 pour ce module
+    "UE 6.1 Mathématiques pour l'ingénieur S6": {"en": "[S6] Mathematics for Engineers S6", "credits": 2, "type": "COURSE"}, 
     "UE 6.4 - Méthodes d'analyse et qualité": {"en": "[[S6] Analysis methods and quality", "credits": 2, "type": "COURSE"},
     "UE 5.3 - Electronique appliquée": {"en": "[S5] Applied electronics", "credits": 5, "type": "COURSE"},
     "UE 6.3 - Sciences du numérique 1": {"en": "[S6] Digital sciences 1", "credits": 8, "type": "COURSE"},
@@ -43,7 +43,7 @@ COURSE_INFO_DB = {
     "UE 5.4 - Anglais S5": {"en": "[S5] English", "credits": 2, "type": "COURSE"},
     "UE 6.5 - Anglais S6": {"en": "[S6] English", "credits": 2, "type": "COURSE"},
 
-    # CATEGORIES (avec crédits à 0, pour la mise en forme du tableau)
+    # CATEGORIES
     "Sciences de base": {"en": "Science Fundamentals", "credits": 0, "type": "CATEGORY"},
     "Sciences et méthodes de l'ingénieur": {"en": "Engineering methodology", "credits": 0, "type": "CATEGORY"},
     "Sciences et techniques de spécialité": {"en": "Industrial engineering techniques and systems", "credits": 0, "type": "CATEGORY"},
@@ -91,29 +91,23 @@ def parse_metadata(text):
 def prepare_df_for_edit(raw_table):
     """Prépare le DataFrame avec les crédits fixes et la traduction initiale pour édition."""
     processed_rows = []
-    start_index = 1 # Skip header du PDF français
+    start_index = 1 
     
     for row in raw_table[start_index:]:
-        # Nettoyage des cellules
         clean_row = [str(cell).replace('\n', ' ').strip() if cell else "" for cell in row]
         
         if len(clean_row) >= 3 and clean_row[0]:
             french_name = clean_row[0].strip()
             grade_pdf = clean_row[2].strip() 
             
-            # Tente de matcher la clé du PDF (avec/sans tiret)
             info = COURSE_INFO_DB.get(french_name)
             
-            # Tente de matcher sans le tiret s'il est présent dans le PDF, car le DB peut être sans tiret
-            if not info and " - " in french_name:
-                 info = COURSE_INFO_DB.get(french_name.replace(" - ", " ").strip())
-
             if info:
                 english_name = info['en']
                 credits_val = info['credits']
                 is_category = (info['type'] == "CATEGORY")
             else:
-                # Cas inconnu: le français est copié dans l'anglais, crédits à 0 pour éviter de fausser le GPA
+                # Cas inconnu (nouveau cours)
                 english_name = french_name
                 credits_val = 0 
                 is_category = (clean_row[1] == "" and clean_row[2] == "") 
@@ -134,20 +128,19 @@ def calculate_gpa_from_edited_df(df):
         if not grade: return None
         return GPA_MAPPING.get(grade.upper(), 0.0)
 
-    total_points = 0
-    total_credits = 0
+    total_points = 0.0
+    total_credits = 0.0
     
     for index, row in df.iterrows():
         if not row['Is_Category']:
             points = get_gpa_points(row['ECTS_Grade'])
             
             if points is not None:
-                # Logique de calcul GPA corrigée et vérifiée : (Note GPA * Crédits FIXES)
-                weight = row['Credits']
+                # Calcul GPA corrigé et VÉRIFIÉ : (Note GPA * Crédits FIXES)
+                weight = float(row['Credits']) # S'assurer que c'est un flottant
                 total_points += (points * weight)
                 total_credits += weight
             
-            # Ajout du score GPA individuel dans le DF pour affichage
             df.at[index, 'GPA_Score_Display'] = f"{points:.1f}" if points is not None else ""
         else:
             df.at[index, 'GPA_Score_Display'] = ""
@@ -189,7 +182,6 @@ def generate_pdf(metadata, df, final_gpa, total_creds, signature_img, supervisor
     elements.append(Spacer(1, 20*mm))
 
     # --- INFOS ÉTUDIANT ---
-    # CESI et phrase "The following table" retirées
     
     info_style = ParagraphStyle('Info', parent=styles['Normal'], leading=15, fontSize=10)
     elements.append(Paragraph(f"<b>Program:</b> {metadata['program']}", info_style))
@@ -225,12 +217,10 @@ def generate_pdf(metadata, df, final_gpa, total_creds, signature_img, supervisor
         c_name = row['English_Course']
         
         if row['Is_Category']:
-            # Ligne Catégorie : fusion des cellules
             table_data.append([c_name, "", "", ""])
             table_styles.append(('SPAN', (0, row_idx), (-1, row_idx)))
             table_styles.append(('FONTNAME', (0, row_idx), (0, row_idx), 'Helvetica-Bold'))
         else:
-            # Ligne Cours normal
             c_credits = str(int(row['Credits']))
             c_grade = row['ECTS_Grade']
             c_gpa = row['GPA_Score_Display']
@@ -239,10 +229,9 @@ def generate_pdf(metadata, df, final_gpa, total_creds, signature_img, supervisor
         row_idx += 1
         
     # Ligne TOTAL
-    # Le GPA est formaté à un chiffre après la virgule, comme dans l'exemple
-    table_data.append(["TOTAL", str(int(total_creds)), "", f"{final_gpa:.1f}"])
+    total_creds_int = int(total_creds) if total_creds == int(total_creds) else total_creds
+    table_data.append(["TOTAL", str(total_creds_int), "", f"{final_gpa:.1f}"])
     
-    # Style ligne TOTAL: Gras, "TOTAL" aligné à droite dans sa case
     table_styles.append(('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'))
     table_styles.append(('ALIGN', (0, row_idx), (0, row_idx), 'RIGHT'))
     
@@ -265,7 +254,6 @@ def generate_pdf(metadata, df, final_gpa, total_creds, signature_img, supervisor
         rl_sig.hAlign = 'LEFT'
         sig_content.append(rl_sig)
     
-    # Table signature : Col1 (Vide/Spacer), Col2 (Signature) pour l'alignement à droite
     sig_table_data = [["", sig_content]]
     sig_table = Table(sig_table_data, colWidths=[100*mm, 75*mm])
     sig_table.setStyle(TableStyle([
@@ -314,14 +302,14 @@ if uploaded_file:
     # 1. Parsing
     text, raw_table = extract_data_from_pdf(uploaded_file)
     meta = parse_metadata(text)
-    meta['program'] = program # Override
+    meta['program'] = program
 
-    # 2. Préparation pour l'édition (avec traduction et crédits fixes)
+    # 2. Préparation pour l'édition (avec traduction et crédits fixes rétablis)
     df_initial_for_edit = prepare_df_for_edit(raw_table)
 
     with col_preview:
         st.subheader("4. Vérification, Traduction et Calcul")
-        st.info("💡 **GPA corrigé** : La traduction par défaut pour les cours de Mathématiques est rétablie et les crédits fixes sont correctement appliqués. Vous pouvez modifier la colonne **'Nom Anglais (Éditable)'** si besoin.")
+        st.info("✅ **Calcul GPA rétabli** : Les crédits fixes sont appliqués et les traductions par défaut sont correctes. Vérifiez et ajustez si nécessaire la colonne **'Nom Anglais (Éditable)'**.")
 
         # Éditeur de données interactif
         edited_df = st.data_editor(
@@ -346,7 +334,6 @@ if uploaded_file:
         st.write("Générer le PDF ci-dessous pour un document conforme.")
         
         if st.button("📄 Générer et Télécharger le PDF", type="primary"):
-            # Récupération image signature
             sig_img = None
             if canvas_result.image_data is not None and canvas_result.image_data.any():
                 sig_img = PILImage.fromarray(canvas_result.image_data.astype('uint8'), 'RGBA')
