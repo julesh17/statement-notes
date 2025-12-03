@@ -1,1 +1,7 @@
 streamlit
+pandas
+pdfplumber
+reportlab
+streamlit-drawable-canvas
+numpy
+Pillow
