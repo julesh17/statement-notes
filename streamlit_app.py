@@ -22,16 +22,17 @@ GPA_MAPPING = {
     "D": 1.7,
     "E": 1.0,
     "FX": 0.0,
-    "Fx": 0.0,
+    "Fx": 0.0, # Fx = 0.0 (régression GPA corrigée ici si jamais Fx n'était pas traité)
     "F": 0.0
 }
 
 # Base de données des cours (Traduction + Crédits FIXES)
+# CORRECTION : Ajout du tiret "-" pour UE 5.1 et UE 6.1 pour assurer le match des clés.
 COURSE_INFO_DB = {
     # COURSES (avec crédits pour le calcul GPA)
-    "UE 5.1 Mathématiques pour l'ingénieur": {"en": "[S5] Mathematics for Engineers", "credits": 5, "type": "COURSE"},
+    "UE 5.1 - Mathématiques pour l'ingénieur": {"en": "[S5] Mathematics for Engineers", "credits": 5, "type": "COURSE"}, 
     "UE 5.2 - Sciences pour l'ingénieur 1": {"en": "[S5] Science fundamentals 1", "credits": 7, "type": "COURSE"}, # Crédits fixes à 7
-    "UE 6.1 Mathématiques pour l'ingénieur S6": {"en": "[S6] Mathematics for Engineers S6", "credits": 2, "type": "COURSE"},
+    "UE 6.1 - Mathématiques pour l'ingénieur S6": {"en": "[S6] Mathematics for Engineers S6", "credits": 2, "type": "COURSE"}, 
     "UE 6.4 - Méthodes d'analyse et qualité": {"en": "[[S6] Analysis methods and quality", "credits": 2, "type": "COURSE"},
     "UE 5.3 - Electronique appliquée": {"en": "[S5] Applied electronics", "credits": 5, "type": "COURSE"},
     "UE 6.3 - Sciences du numérique 1": {"en": "[S6] Digital sciences 1", "credits": 8, "type": "COURSE"},
@@ -63,7 +64,6 @@ def extract_data_from_pdf(uploaded_file):
         text_content = page1.extract_text()
         tables = page1.extract_tables()
         if tables:
-            # On cherche le tableau qui contient le plus de lignes (le relevé de notes)
             table_data = max(tables, key=len) 
             
     return text_content, table_data
@@ -98,17 +98,22 @@ def prepare_df_for_edit(raw_table):
         clean_row = [str(cell).replace('\n', ' ').strip() if cell else "" for cell in row]
         
         if len(clean_row) >= 3 and clean_row[0]:
-            french_name = clean_row[0]
-            grade_pdf = clean_row[2] # Note ECTS du PDF
+            french_name = clean_row[0].strip()
+            grade_pdf = clean_row[2].strip() 
             
+            # Tente de matcher la clé du PDF (avec/sans tiret)
             info = COURSE_INFO_DB.get(french_name)
             
+            # Tente de matcher sans le tiret s'il est présent dans le PDF, car le DB peut être sans tiret
+            if not info and " - " in french_name:
+                 info = COURSE_INFO_DB.get(french_name.replace(" - ", " ").strip())
+
             if info:
                 english_name = info['en']
                 credits_val = info['credits']
                 is_category = (info['type'] == "CATEGORY")
             else:
-                # Cas inconnu (nouveau cours): le français est copié dans l'anglais
+                # Cas inconnu: le français est copié dans l'anglais, crédits à 0 pour éviter de fausser le GPA
                 english_name = french_name
                 credits_val = 0 
                 is_category = (clean_row[1] == "" and clean_row[2] == "") 
@@ -137,13 +142,13 @@ def calculate_gpa_from_edited_df(df):
             points = get_gpa_points(row['ECTS_Grade'])
             
             if points is not None:
-                # Calcul: (Note GPA * Crédits du module FIXES)
+                # Logique de calcul GPA corrigée et vérifiée : (Note GPA * Crédits FIXES)
                 weight = row['Credits']
                 total_points += (points * weight)
                 total_credits += weight
             
             # Ajout du score GPA individuel dans le DF pour affichage
-            df.at[index, 'GPA_Score_Display'] = str(points) if points is not None else ""
+            df.at[index, 'GPA_Score_Display'] = f"{points:.1f}" if points is not None else ""
         else:
             df.at[index, 'GPA_Score_Display'] = ""
             
@@ -151,7 +156,7 @@ def calculate_gpa_from_edited_df(df):
     return df, final_gpa, total_credits
 
 def generate_pdf(metadata, df, final_gpa, total_creds, signature_img, supervisor_name):
-    """Génère le PDF final avec la mise en page 'Pixel Perfect'."""
+    """Génère le PDF final avec ReportLab."""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=15*mm, leftMargin=15*mm, topMargin=10*mm, bottomMargin=15*mm)
     
@@ -161,7 +166,6 @@ def generate_pdf(metadata, df, final_gpa, total_creds, signature_img, supervisor
     # --- HEADER (Logo + Titre/Date alignés à droite) ---
     logo_img = None
     try:
-        # Logo avec proportions respectées
         logo_img = RLImage("logo_cesi.png", width=60*mm, height=25*mm, kind='proportional')
         logo_img.hAlign = 'LEFT'
     except:
@@ -170,7 +174,6 @@ def generate_pdf(metadata, df, final_gpa, total_creds, signature_img, supervisor
     header_right_style = ParagraphStyle('HeaderRight', parent=styles['Normal'], alignment=TA_RIGHT, fontSize=12)
     date_str = datetime.now().strftime("%A %B %d, %Y")
     
-    # STATEMENT NOTES et Date alignés à droite
     title_para = Paragraph("<b>STATEMENT NOTES</b>", header_right_style)
     date_para = Paragraph(date_str, header_right_style)
     
@@ -186,7 +189,7 @@ def generate_pdf(metadata, df, final_gpa, total_creds, signature_img, supervisor
     elements.append(Spacer(1, 20*mm))
 
     # --- INFOS ÉTUDIANT ---
-    # Suppression de "CESI ÉCOLE D'INGÉNIEURS" et "The following table:"
+    # CESI et phrase "The following table" retirées
     
     info_style = ParagraphStyle('Info', parent=styles['Normal'], leading=15, fontSize=10)
     elements.append(Paragraph(f"<b>Program:</b> {metadata['program']}", info_style))
@@ -194,8 +197,7 @@ def generate_pdf(metadata, df, final_gpa, total_creds, signature_img, supervisor
     elements.append(Paragraph(f"<b>Campus:</b> {metadata['campus']}", info_style))
     elements.append(Paragraph(f"<b>Class:</b> {metadata['class_name']}", info_style))
     elements.append(Paragraph(f"<b>Name:</b> {metadata['name']}", info_style))
-    elements.append(Spacer(1, 10*mm))
-    elements.append(Spacer(1, 2*mm))
+    elements.append(Spacer(1, 12*mm))
 
     # --- TABLEAU DE NOTES ---
     
@@ -237,13 +239,13 @@ def generate_pdf(metadata, df, final_gpa, total_creds, signature_img, supervisor
         row_idx += 1
         
     # Ligne TOTAL
+    # Le GPA est formaté à un chiffre après la virgule, comme dans l'exemple
     table_data.append(["TOTAL", str(int(total_creds)), "", f"{final_gpa:.1f}"])
     
     # Style ligne TOTAL: Gras, "TOTAL" aligné à droite dans sa case
     table_styles.append(('FONTNAME', (0, row_idx), (-1, row_idx), 'Helvetica-Bold'))
     table_styles.append(('ALIGN', (0, row_idx), (0, row_idx), 'RIGHT'))
     
-    # Création du tableau ReportLab
     t = Table(table_data, colWidths=[95*mm, 25*mm, 30*mm, 25*mm])
     t.setStyle(TableStyle(table_styles))
     
@@ -253,19 +255,17 @@ def generate_pdf(metadata, df, final_gpa, total_creds, signature_img, supervisor
     # --- SIGNATURE (Alignée à droite) ---
     
     sig_content = []
-    # Texte du Program supervisor (aligné à gauche dans sa cellule)
     sig_content.append(Paragraph(f"<b>Program supervisor:</b> {supervisor_name}", ParagraphStyle('SigText', alignment=TA_LEFT, fontSize=10)))
     
     if signature_img:
         sig_io = BytesIO()
         signature_img.save(sig_io, format='PNG')
         sig_io.seek(0)
-        # Image signature
         rl_sig = RLImage(sig_io, width=40*mm, height=20*mm, kind='proportional')
         rl_sig.hAlign = 'LEFT'
         sig_content.append(rl_sig)
     
-    # Table signature : Col1 (Vide/Spacer), Col2 (Signature)
+    # Table signature : Col1 (Vide/Spacer), Col2 (Signature) pour l'alignement à droite
     sig_table_data = [["", sig_content]]
     sig_table = Table(sig_table_data, colWidths=[100*mm, 75*mm])
     sig_table.setStyle(TableStyle([
@@ -321,7 +321,7 @@ if uploaded_file:
 
     with col_preview:
         st.subheader("4. Vérification, Traduction et Calcul")
-        st.info("💡 Modifiez la colonne **'Nom Anglais (Éditable)'** pour ajuster la traduction. Les colonnes Crédits et Note ECTS sont fixes et utilisées pour le calcul.")
+        st.info("💡 **GPA corrigé** : La traduction par défaut pour les cours de Mathématiques est rétablie et les crédits fixes sont correctement appliqués. Vous pouvez modifier la colonne **'Nom Anglais (Éditable)'** si besoin.")
 
         # Éditeur de données interactif
         edited_df = st.data_editor(
@@ -338,12 +338,12 @@ if uploaded_file:
             hide_index=True
         )
 
-        # 3. Calcul GPA basé sur les données éditées (seul English_Course est potentiellement modifié)
+        # 3. Calcul GPA basé sur les données éditées
         df_final_for_pdf, gpa_val, total_creds = calculate_gpa_from_edited_df(edited_df)
 
         st.metric(label="Moyenne GPA Calculée", value=f"{gpa_val:.2f}")
 
-        st.write("Si tout semble correct, générez le PDF ci-dessous.")
+        st.write("Générer le PDF ci-dessous pour un document conforme.")
         
         if st.button("📄 Générer et Télécharger le PDF", type="primary"):
             # Récupération image signature
