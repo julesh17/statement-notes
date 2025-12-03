@@ -205,8 +205,6 @@ def generate_pdf(metadata, df, final_gpa, total_credits, signature_img, supervis
     
     # --- INFOS ÉTUDIANT ---
     # CESI École d'ingénieurs (simulé du doc source)
-    elements.append(Paragraph("<b>CESI</b><br/>ÉCOLE D'INGÉNIEURS", styles['Normal']))
-    elements.append(Spacer(1, 5*mm))
 
     info_style = ParagraphStyle('Info', parent=styles['Normal'], leading=15, fontSize=10)
     elements.append(Paragraph(f"<b>Program:</b> {metadata['program']}", info_style))
@@ -216,7 +214,6 @@ def generate_pdf(metadata, df, final_gpa, total_credits, signature_img, supervis
     elements.append(Paragraph(f"<b>Name:</b> {metadata['name']}", info_style))
     elements.append(Spacer(1, 10*mm))
     
-    elements.append(Paragraph("The following table:", styles['Normal']))
     elements.append(Spacer(1, 2*mm))
 
     # --- TABLEAU DE NOTES ---
