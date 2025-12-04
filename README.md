@@ -10,7 +10,7 @@ Vous pouvez accéder et utiliser l'application directement via ce lien :
 
 ## 🎯 Objectif de l'Application
 
-Cet outil Streamlit est conçu pour les étudiants CESI (École d'Ingénieurs) ayant besoin de convertir leur **Relevé de Notes officiel français** en un document standard international appelé **"Statement Notes"**.
+Cet outil Streamlit est conçu pour les Responsables Pédagogiques CESI (École d'Ingénieurs) ayant besoin de convertir un **Relevé de Notes officiel français** en un document standard international appelé **"Statement Notes"**.
 
 L'application réalise les opérations suivantes :
 
